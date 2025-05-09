@@ -36,10 +36,10 @@ interface ToolCardProps {
 export default function ToolCard({ tool }: ToolCardProps) {
   const { t } = useLanguage()
 
-  const handleToolClick = async () => {
+  const handleToolClick = async (toolId: string) => {
     try {
       // Track the click
-      await trackToolClick(tool.id)
+      await trackToolClick(toolId)
 
       toast({
         title: "Opening tool website",
@@ -47,6 +47,7 @@ export default function ToolCard({ tool }: ToolCardProps) {
       })
     } catch (error) {
       console.error("Error tracking tool click:", error)
+      // Continue even if tracking fails
     }
   }
 
@@ -118,7 +119,7 @@ export default function ToolCard({ tool }: ToolCardProps) {
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button asChild className="flex-1 bg-blue-500 hover:bg-blue-600" onClick={handleToolClick}>
+              <Button asChild className="flex-1 bg-blue-500 hover:bg-blue-600" onClick={() => handleToolClick(tool.id)}>
                 <a href={tool.referral_url || tool.url} target="_blank" rel="noopener noreferrer">
                   {t("tool.visit")} <ExternalLink className="ml-2 h-4 w-4" />
                 </a>

@@ -246,7 +246,7 @@ export default function CategoriesPage() {
                 </CardHeader>
                 <CardFooter>
                   <Button asChild className="w-full bg-blue-500 hover:bg-blue-600">
-                    <Link href={`/workspace/${category.slug}`}>
+                    <Link href={`/categories/${category.slug}`}>
                       Explore <ArrowRight className="ml-2 h-4 w-4" />
                     </Link>
                   </Button>

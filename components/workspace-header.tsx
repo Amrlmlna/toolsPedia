@@ -65,7 +65,7 @@ export default function WorkspaceHeader({ category }: WorkspaceHeaderProps) {
             <DropdownMenuContent align="end">
               {categories.map((cat) => (
                 <DropdownMenuItem key={cat.id} asChild>
-                  <Link href={`/workspace/${cat.id}`} className="flex items-center gap-2">
+                  <Link href={`/categories/${cat.id}`} className="flex items-center gap-2">
                     {cat.icon}
                     <span>{cat.name}</span>
                   </Link>

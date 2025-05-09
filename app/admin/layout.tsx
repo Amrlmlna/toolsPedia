@@ -5,6 +5,7 @@ import Link from "next/link"
 import { BarChart, Grid, Package, Settings, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useLanguage } from "@/contexts/language-context"
+import AdminLogout from "@/components/admin-logout"
 
 interface AdminLayoutProps {
   children: ReactNode
@@ -16,7 +17,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
       {/* Sidebar */}
-      <div className="w-full md:w-64 bg-muted/50 border-r p-4">
+      <div className="w-full md:w-64 bg-muted/50 border-r p-4 flex flex-col min-h-screen">
         <div className="flex items-center gap-2 mb-8">
           <div className="font-bold text-xl bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-violet-500">
             Admin Panel
@@ -60,6 +61,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             </Link>
           </Button>
         </nav>
+        <div className="mt-auto pt-4">
+          <AdminLogout />
+        </div>
       </div>
 
       {/* Main content */}

@@ -203,7 +203,7 @@ export default function Home() {
                   </CardHeader>
                   <CardFooter>
                     <Button asChild className="w-full bg-blue-500 hover:bg-blue-600">
-                      <Link href={`/workspace/${category.slug}`}>
+                      <Link href={`/categories/${category.slug}`}>
                         Explore <ArrowRight className="ml-2 h-4 w-4" />
                       </Link>
                     </Button>
@@ -220,7 +220,7 @@ export default function Home() {
                   asChild
                   className="h-auto py-3 justify-start border-blue-500/20 hover:border-blue-500/50 hover:bg-blue-500/10"
                 >
-                  <Link href={`/workspace/${category.slug}`} className="flex items-center gap-2">
+                  <Link href={`/categories/${category.slug}`} className="flex items-center gap-2">
                     {category.icon}
                     <span>{category.title}</span>
                   </Link>
