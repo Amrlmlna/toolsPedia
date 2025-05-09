@@ -6,21 +6,55 @@ import Link from "next/link"
 import { ArrowLeft, ArrowRight, ExternalLink, Star } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { getTrendingTools, trackToolClick } from "@/lib/data"
+import { getTools, trackToolClick } from "@/lib/api"
 import { useLanguage } from "@/contexts/language-context"
 import { cn } from "@/lib/utils"
 
 export default function TrendingCarousel() {
   const { t } = useLanguage()
-  const [trendingTools, setTrendingTools] = useState([])
+  const [trendingTools, setTrendingTools] = useState<any[]>([])
   const [activeIndex, setActiveIndex] = useState(0)
   const [isPaused, setIsPaused] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const carouselRef = useRef(null)
 
   // Get trending tools on component mount
   useEffect(() => {
-    const tools = getTrendingTools(5)
-    setTrendingTools(tools)
+    const fetchTrendingTools = async () => {
+      try {
+        // Get featured tools with limit parameter
+        const data = await getTools({ featured: true, limit: 5 })
+
+        // If no featured tools, get top 5 by clicks
+        if (data.length === 0) {
+          const allTools = await getTools({ limit: 5 })
+          const sorted = [...allTools].sort((a, b) => b.clicks - a.clicks)
+
+          // Add rank
+          const ranked = sorted.map((tool, index) => ({
+            ...tool,
+            rank: index + 1,
+          }))
+
+          setTrendingTools(ranked)
+        } else {
+          // Add rank to featured tools
+          const ranked = data.map((tool, index) => ({
+            ...tool,
+            rank: index + 1,
+          }))
+
+          setTrendingTools(ranked)
+        }
+
+        setIsLoading(false)
+      } catch (error) {
+        console.error("Error fetching trending tools:", error)
+        setIsLoading(false)
+      }
+    }
+
+    fetchTrendingTools()
   }, [])
 
   // Auto scroll effect
@@ -34,8 +68,12 @@ export default function TrendingCarousel() {
     return () => clearInterval(interval)
   }, [trendingTools, isPaused])
 
-  const handleToolClick = (toolId) => {
-    trackToolClick(toolId)
+  const handleToolClick = async (toolId: string) => {
+    try {
+      await trackToolClick(toolId)
+    } catch (error) {
+      console.error("Error tracking tool click:", error)
+    }
   }
 
   const handlePrev = () => {
@@ -46,11 +84,22 @@ export default function TrendingCarousel() {
     setActiveIndex((current) => (current + 1) % trendingTools.length)
   }
 
-  const handleDotClick = (index) => {
+  const handleDotClick = (index: number) => {
     setActiveIndex(index)
   }
 
-  if (!trendingTools.length) return null
+  if (isLoading) {
+    return <div className="flex justify-center items-center h-64">Loading...</div>
+  }
+
+  if (!trendingTools.length) {
+    return (
+      <div className="text-center py-12 border border-blue-500/20 rounded-xl">
+        <h3 className="text-xl font-medium mb-2">No featured tools available yet</h3>
+        <p className="text-muted-foreground mb-4">Featured tools will appear here once they are added</p>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -96,7 +145,7 @@ export default function TrendingCarousel() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6">
               <div className="aspect-video relative bg-muted overflow-hidden rounded-lg">
                 <Image
-                  src={tool.imageUrl || "/placeholder.svg?height=400&width=600"}
+                  src={tool.image_url || "/placeholder.svg?height=400&width=600"}
                   alt={tool.name}
                   fill
                   className="object-cover transition-transform hover:scale-105"
@@ -122,19 +171,20 @@ export default function TrendingCarousel() {
                         }`}
                       />
                     ))}
-                    <span className="text-sm ml-1">{tool.rating.toFixed(1)}</span>
+                    <span className="text-sm ml-1">{Number(tool.rating).toFixed(1)}</span>
                   </div>
 
                   <div className="flex flex-wrap gap-2 mb-3">
-                    {tool.tags.map((tag) => (
-                      <Badge
-                        key={tag}
-                        variant="secondary"
-                        className="text-xs bg-blue-500/10 text-blue-500 hover:bg-blue-500/20"
-                      >
-                        {tag}
-                      </Badge>
-                    ))}
+                    {tool.tags &&
+                      tool.tags.map((tag: any) => (
+                        <Badge
+                          key={tag.id || tag.name}
+                          variant="secondary"
+                          className="text-xs bg-blue-500/10 text-blue-500 hover:bg-blue-500/20"
+                        >
+                          {tag.name}
+                        </Badge>
+                      ))}
                   </div>
 
                   <div className="text-sm font-medium">
@@ -152,7 +202,7 @@ export default function TrendingCarousel() {
                     onClick={() => handleToolClick(tool.id)}
                     asChild
                   >
-                    <a href={tool.url} target="_blank" rel="noopener noreferrer">
+                    <a href={tool.referral_url || tool.url} target="_blank" rel="noopener noreferrer">
                       {t("tool.visit")} <ExternalLink className="ml-2 h-4 w-4" />
                     </a>
                   </Button>

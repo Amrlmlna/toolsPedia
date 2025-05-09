@@ -1,11 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Edit, Plus, Search, Trash } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { getCategories } from "@/lib/data"
 import { useLanguage } from "@/contexts/language-context"
 import {
   Dialog,
@@ -20,6 +19,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
+import { getCategories, createCategory, updateCategory, deleteCategory } from "@/lib/api"
 
 const formSchema = z.object({
   name: z.string().min(2, {
@@ -29,11 +29,15 @@ const formSchema = z.object({
     message: "Slug must be at least 2 characters.",
   }),
   description: z.string().optional(),
+  icon: z.string().optional(),
+  group_name: z.string().optional(),
 })
 
 export default function CategoriesAdmin() {
   const [searchQuery, setSearchQuery] = useState("")
-  const categoriesData = getCategories()
+  const [categories, setCategories] = useState<any[]>([])
+  const [filteredCategories, setFilteredCategories] = useState<any[]>([])
+  const [isLoading, setIsLoading] = useState(true)
   const { t } = useLanguage()
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
@@ -46,6 +50,8 @@ export default function CategoriesAdmin() {
       name: "",
       slug: "",
       description: "",
+      icon: "",
+      group_name: "",
     },
   })
 
@@ -55,42 +61,100 @@ export default function CategoriesAdmin() {
       name: "",
       slug: "",
       description: "",
+      icon: "",
+      group_name: "",
     },
   })
 
-  const filteredCategories = categoriesData.filter((category) =>
-    category.name.toLowerCase().includes(searchQuery.toLowerCase()),
-  )
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const data = await getCategories()
+        setCategories(data)
+        setFilteredCategories(data)
+        setIsLoading(false)
+      } catch (error) {
+        console.error("Error fetching categories:", error)
+        toast({
+          title: "Error",
+          description: "Failed to load categories. Please try again.",
+          variant: "destructive",
+        })
+        setIsLoading(false)
+      }
+    }
 
-  const handleAddCategory = (values: z.infer<typeof formSchema>) => {
-    // In a real app, you would send this data to your backend
-    console.log(values)
-    toast({
-      title: "Category added",
-      description: "The category has been added successfully.",
-    })
-    setIsAddDialogOpen(false)
-    form.reset()
+    fetchCategories()
+  }, [])
+
+  useEffect(() => {
+    if (searchQuery.trim() === "") {
+      setFilteredCategories(categories)
+    } else {
+      const filtered = categories.filter((category) => category.name.toLowerCase().includes(searchQuery.toLowerCase()))
+      setFilteredCategories(filtered)
+    }
+  }, [searchQuery, categories])
+
+  const handleAddCategory = async (values: z.infer<typeof formSchema>) => {
+    try {
+      const newCategory = await createCategory(values)
+
+      // Update local state
+      setCategories([...categories, newCategory])
+
+      toast({
+        title: "Category added",
+        description: "The category has been added successfully.",
+      })
+
+      setIsAddDialogOpen(false)
+      form.reset()
+    } catch (error) {
+      console.error("Error adding category:", error)
+      toast({
+        title: "Error",
+        description: "Failed to add category. Please try again.",
+        variant: "destructive",
+      })
+    }
   }
 
   const handleEditClick = (category: any) => {
     setSelectedCategory(category)
     editForm.reset({
       name: category.name,
-      slug: category.id,
-      description: "",
+      slug: category.slug,
+      description: category.description || "",
+      icon: category.icon || "",
+      group_name: category.group_name || "",
     })
     setIsEditDialogOpen(true)
   }
 
-  const handleEditCategory = (values: z.infer<typeof formSchema>) => {
-    // In a real app, you would send this data to your backend
-    console.log(values)
-    toast({
-      title: "Category updated",
-      description: "The category has been updated successfully.",
-    })
-    setIsEditDialogOpen(false)
+  const handleEditCategory = async (values: z.infer<typeof formSchema>) => {
+    if (!selectedCategory) return
+
+    try {
+      const updatedCategory = await updateCategory(selectedCategory.id, values)
+
+      // Update local state
+      setCategories(categories.map((category) => (category.id === selectedCategory.id ? updatedCategory : category)))
+
+      toast({
+        title: "Category updated",
+        description: "The category has been updated successfully.",
+      })
+
+      setIsEditDialogOpen(false)
+    } catch (error) {
+      console.error("Error updating category:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update category. Please try again.",
+        variant: "destructive",
+      })
+    }
   }
 
   const handleDeleteClick = (category: any) => {
@@ -98,13 +162,33 @@ export default function CategoriesAdmin() {
     setIsDeleteDialogOpen(true)
   }
 
-  const handleDeleteConfirm = () => {
-    // In a real app, you would delete the category from the database
-    toast({
-      title: "Category deleted",
-      description: "The category has been deleted successfully.",
-    })
-    setIsDeleteDialogOpen(false)
+  const handleDeleteConfirm = async () => {
+    if (!selectedCategory) return
+
+    try {
+      await deleteCategory(selectedCategory.id)
+
+      // Update local state
+      setCategories(categories.filter((category) => category.id !== selectedCategory.id))
+
+      toast({
+        title: "Category deleted",
+        description: "The category has been deleted successfully.",
+      })
+
+      setIsDeleteDialogOpen(false)
+    } catch (error) {
+      console.error("Error deleting category:", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete category. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  if (isLoading) {
+    return <div className="flex justify-center items-center h-64">Loading...</div>
   }
 
   return (
@@ -138,28 +222,38 @@ export default function CategoriesAdmin() {
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Slug</TableHead>
+              <TableHead>Group</TableHead>
               <TableHead className="w-[100px]">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredCategories.map((category) => (
-              <TableRow key={category.id}>
-                <TableCell className="font-medium">{category.name}</TableCell>
-                <TableCell>{category.id}</TableCell>
-                <TableCell>
-                  <div className="flex gap-2">
-                    <Button variant="ghost" size="icon" onClick={() => handleEditClick(category)}>
-                      <Edit className="h-4 w-4" />
-                      <span className="sr-only">Edit</span>
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(category)}>
-                      <Trash className="h-4 w-4 text-red-500" />
-                      <span className="sr-only">Delete</span>
-                    </Button>
-                  </div>
+            {filteredCategories.length > 0 ? (
+              filteredCategories.map((category) => (
+                <TableRow key={category.id}>
+                  <TableCell className="font-medium">{category.name}</TableCell>
+                  <TableCell>{category.slug}</TableCell>
+                  <TableCell>{category.group_name || "-"}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-2">
+                      <Button variant="ghost" size="icon" onClick={() => handleEditClick(category)}>
+                        <Edit className="h-4 w-4" />
+                        <span className="sr-only">Edit</span>
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => handleDeleteClick(category)}>
+                        <Trash className="h-4 w-4 text-red-500" />
+                        <span className="sr-only">Delete</span>
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell colSpan={4} className="text-center py-8">
+                  No categories found. {searchQuery ? "Try a different search term." : "Add your first category."}
                 </TableCell>
               </TableRow>
-            ))}
+            )}
           </TableBody>
         </Table>
       </div>
@@ -210,6 +304,34 @@ export default function CategoriesAdmin() {
                     <FormControl>
                       <Input placeholder="Brief description of the category" {...field} />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="icon"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Icon (Optional)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Icon name (e.g. Code, Palette)" {...field} />
+                    </FormControl>
+                    <FormDescription>Name of the Lucide icon to use.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="group_name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Group (Optional)</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g. Creative, Technology, Business" {...field} />
+                    </FormControl>
+                    <FormDescription>Group this category belongs to.</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -273,6 +395,34 @@ export default function CategoriesAdmin() {
                     <FormControl>
                       <Input {...field} />
                     </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={editForm.control}
+                name="icon"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Icon (Optional)</FormLabel>
+                    <FormControl>
+                      <Input {...field} />
+                    </FormControl>
+                    <FormDescription>Name of the Lucide icon to use.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={editForm.control}
+                name="group_name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Group (Optional)</FormLabel>
+                    <FormControl>
+                      <Input {...field} />
+                    </FormControl>
+                    <FormDescription>Group this category belongs to.</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}

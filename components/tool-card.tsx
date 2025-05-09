@@ -7,19 +7,24 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { toast } from "@/components/ui/use-toast"
-import { trackToolClick } from "@/lib/data"
+import { trackToolClick } from "@/lib/api"
+import { useLanguage } from "@/contexts/language-context"
 
 interface Tool {
   id: string
   name: string
   description: string
-  imageUrl: string
+  image_url: string
   url: string
+  referral_url?: string
   rating: number
   price: string
-  tags: string[]
-  addedDate: string
-  category?: string
+  tags: any[]
+  created_at: string
+  categories?: {
+    name: string
+    slug: string
+  }
   clicks?: number
   rank?: number
 }
@@ -29,24 +34,37 @@ interface ToolCardProps {
 }
 
 export default function ToolCard({ tool }: ToolCardProps) {
-  const handleToolClick = () => {
-    // Track the click
-    trackToolClick(tool.id)
+  const { t } = useLanguage()
 
-    toast({
-      title: "Opening tool website",
-      description: `You're being redirected to ${tool.name}`,
-    })
+  const handleToolClick = async () => {
+    try {
+      // Track the click
+      await trackToolClick(tool.id)
+
+      toast({
+        title: "Opening tool website",
+        description: `You're being redirected to ${tool.name}`,
+      })
+    } catch (error) {
+      console.error("Error tracking tool click:", error)
+    }
   }
 
   return (
     <Card className="overflow-hidden transition-all hover:shadow-lg hover:shadow-blue-500/10 border-blue-500/20 bg-background/60 backdrop-blur">
       <div className="aspect-video relative bg-muted overflow-hidden">
         <Image
-          src={tool.imageUrl || "/placeholder.svg?height=200&width=400"}
+          src={tool.image_url || `/placeholder.svg?height=200&width=400&text=${encodeURIComponent(tool.name)}`}
           alt={tool.name}
           fill
+          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+          loading="lazy"
           className="object-cover transition-transform hover:scale-105"
+          onError={(e) => {
+            // Fallback jika gambar gagal dimuat
+            const target = e.target as HTMLImageElement
+            target.src = `/placeholder.svg?height=200&width=400&text=${encodeURIComponent(tool.name)}`
+          }}
         />
         {tool.rank && (
           <div className="absolute top-2 right-2">
@@ -72,20 +90,25 @@ export default function ToolCard({ tool }: ToolCardProps) {
               className={`h-4 w-4 ${star <= tool.rating ? "fill-blue-500 text-blue-500" : "fill-muted text-muted"}`}
             />
           ))}
-          <span className="text-sm ml-1">{tool.rating.toFixed(1)}</span>
+          <span className="text-sm ml-1">{Number(tool.rating).toFixed(1)}</span>
         </div>
 
         <div className="flex flex-wrap gap-2 mb-3">
-          {tool.tags.map((tag) => (
-            <Badge key={tag} variant="secondary" className="text-xs bg-blue-500/10 text-blue-500 hover:bg-blue-500/20">
-              {tag}
-            </Badge>
-          ))}
+          {tool.tags &&
+            tool.tags.map((tag) => (
+              <Badge
+                key={tag.id || tag.name}
+                variant="secondary"
+                className="text-xs bg-blue-500/10 text-blue-500 hover:bg-blue-500/20"
+              >
+                {tag.name}
+              </Badge>
+            ))}
         </div>
 
         <div className="text-sm font-medium">
           {tool.price === "Free" ? (
-            <span className="text-emerald-600 dark:text-emerald-400">Free</span>
+            <span className="text-emerald-600 dark:text-emerald-400">{t("tool.free")}</span>
           ) : (
             <span>{tool.price}</span>
           )}
@@ -96,8 +119,8 @@ export default function ToolCard({ tool }: ToolCardProps) {
           <Tooltip>
             <TooltipTrigger asChild>
               <Button asChild className="flex-1 bg-blue-500 hover:bg-blue-600" onClick={handleToolClick}>
-                <a href={tool.url} target="_blank" rel="noopener noreferrer">
-                  Visit Site <ExternalLink className="ml-2 h-4 w-4" />
+                <a href={tool.referral_url || tool.url} target="_blank" rel="noopener noreferrer">
+                  {t("tool.visit")} <ExternalLink className="ml-2 h-4 w-4" />
                 </a>
               </Button>
             </TooltipTrigger>
@@ -108,7 +131,7 @@ export default function ToolCard({ tool }: ToolCardProps) {
         </TooltipProvider>
 
         <Button variant="outline" asChild className="border-blue-500/20 hover:border-blue-500/50 hover:bg-blue-500/10">
-          <Link href={`/tool/${tool.id}`}>Details</Link>
+          <Link href={`/tool/${tool.id}`}>{t("tool.details")}</Link>
         </Button>
       </CardFooter>
     </Card>

@@ -1,6 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import type React from "react"
+
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
@@ -11,8 +13,11 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "@/components/ui/use-toast"
-import { getCategories, getToolById } from "@/lib/data"
 import { useLanguage } from "@/contexts/language-context"
+import { ImageIcon } from "lucide-react"
+import Image from "next/image"
+import { getCategories, getToolById, updateTool } from "@/lib/api"
+import { uploadImageClient } from "@/lib/supabase/storage"
 
 const formSchema = z.object({
   name: z.string().min(2, {
@@ -24,26 +29,37 @@ const formSchema = z.object({
   url: z.string().url({
     message: "Please enter a valid URL.",
   }),
+  referralUrl: z
+    .string()
+    .url({
+      message: "Please enter a valid referral URL.",
+    })
+    .optional()
+    .or(z.literal("")),
   imageUrl: z.string().optional(),
   price: z.string().min(1, {
     message: "Price is required.",
   }),
-  category: z.string({
+  categoryId: z.string({
     required_error: "Please select a category.",
   }),
   tags: z.string().min(1, {
     message: "Please enter at least one tag.",
   }),
+  rating: z.coerce.number().min(0).max(5).default(0),
+  isFeatured: z.boolean().default(false),
 })
 
 export default function EditTool({ params }: { params: { id: string } }) {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const categories = getCategories()
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
+  const [categories, setCategories] = useState<any[]>([])
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const { t } = useLanguage()
   const { id } = params
-
-  const tool = getToolById(id)
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -51,49 +67,152 @@ export default function EditTool({ params }: { params: { id: string } }) {
       name: "",
       description: "",
       url: "",
+      referralUrl: "",
       imageUrl: "",
       price: "",
-      category: "",
+      categoryId: "",
       tags: "",
+      rating: 0,
+      isFeatured: false,
     },
   })
 
   useEffect(() => {
-    if (tool) {
-      form.reset({
-        name: tool.name,
-        description: tool.description,
-        url: tool.url,
-        imageUrl: tool.imageUrl,
-        price: tool.price,
-        category: tool.category,
-        tags: tool.tags.join(", "),
-      })
-    } else {
-      // If tool not found, redirect to tools list
-      router.push("/admin/tools")
-    }
-  }, [tool, form, router])
+    const fetchData = async () => {
+      try {
+        // Fetch categories
+        const categoriesData = await getCategories()
+        setCategories(categoriesData)
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
+        // Fetch tool
+        const toolData = await getToolById(id)
+
+        if (toolData) {
+          // Format tags for form
+          const tagsString = toolData.tags ? toolData.tags.map((tag: any) => tag.name).join(", ") : ""
+
+          // Set form values
+          form.reset({
+            name: toolData.name,
+            description: toolData.description,
+            url: toolData.url,
+            referralUrl: toolData.referral_url || "",
+            imageUrl: toolData.image_url || "",
+            price: toolData.price,
+            categoryId: toolData.category_id,
+            tags: tagsString,
+            rating: Number(toolData.rating) || 0,
+            isFeatured: toolData.is_featured || false,
+          })
+
+          // Set preview image
+          if (toolData.image_url) {
+            setPreviewImage(toolData.image_url)
+          }
+        } else {
+          // If tool not found, redirect to tools list
+          toast({
+            title: "Tool not found",
+            description: "The tool you are trying to edit does not exist.",
+            variant: "destructive",
+          })
+          router.push("/admin/tools")
+        }
+
+        setIsLoading(false)
+      } catch (error) {
+        console.error("Error fetching data:", error)
+        toast({
+          title: "Error",
+          description: "Failed to load data. Please try again.",
+          variant: "destructive",
+        })
+        setIsLoading(false)
+        router.push("/admin/tools")
+      }
+    }
+
+    fetchData()
+  }, [id, form, router])
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+
+    // Validasi ukuran file (max 2MB)
+    if (file && file.size > 2 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Image size should be less than 2MB",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Validasi format file
+    const validTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+    if (file && !validTypes.includes(file.type)) {
+      toast({
+        title: "Invalid file type",
+        description: "Please upload JPEG, PNG, GIF, or WEBP images only",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (file) {
+      setImageFile(file)
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setPreviewImage(event.target.result as string)
+        }
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsSubmitting(true)
 
-    // In a real app, you would send this data to your backend
-    console.log(values)
+    try {
+      let imageUrl = values.imageUrl
 
-    setTimeout(() => {
-      setIsSubmitting(false)
+      // Upload image if file is selected
+      if (imageFile) {
+        const fileName = `${Date.now()}-${imageFile.name.replace(/\s+/g, "-").toLowerCase()}`
+        imageUrl = await uploadImageClient(imageFile, fileName)
+      }
+
+      // Prepare tags array from comma-separated string
+      const tags = values.tags.split(",").map((tag) => tag.trim())
+
+      // Update tool
+      await updateTool(id, {
+        ...values,
+        imageUrl,
+        tags,
+      })
+
       toast({
         title: "Tool updated successfully!",
         description: "The tool has been updated in your directory.",
       })
 
       router.push("/admin/tools")
-    }, 1000)
+    } catch (error) {
+      console.error("Error updating tool:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update tool. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
-  if (!tool) {
-    return <div>Loading...</div>
+  if (isLoading) {
+    return <div className="flex justify-center items-center h-64">Loading...</div>
   }
 
   return (
@@ -146,9 +265,7 @@ export default function EditTool({ params }: { params: { id: string } }) {
                     <FormControl>
                       <Input placeholder="https://example.com" {...field} />
                     </FormControl>
-                    <FormDescription>
-                      The URL to the tool's website (with affiliate link if applicable).
-                    </FormDescription>
+                    <FormDescription>The URL to the tool's official website.</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -156,19 +273,76 @@ export default function EditTool({ params }: { params: { id: string } }) {
 
               <FormField
                 control={form.control}
-                name="imageUrl"
+                name="referralUrl"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t("admin.tool.image")}</FormLabel>
+                    <FormLabel>Referral URL</FormLabel>
                     <FormControl>
-                      <Input placeholder="https://example.com/image.jpg" {...field} />
+                      <Input placeholder="https://example.com/ref=yourcode" {...field} />
                     </FormControl>
-                    <FormDescription>URL to an image of the tool (optional).</FormDescription>
+                    <FormDescription>Your affiliate or referral link (optional).</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
             </div>
+
+            <FormField
+              control={form.control}
+              name="imageUrl"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tool Image</FormLabel>
+                  <div className="flex flex-col gap-4">
+                    <div
+                      className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-4 text-center cursor-pointer hover:bg-muted/50 transition-colors"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      {previewImage ? (
+                        <div className="relative h-40 w-full">
+                          <Image
+                            src={previewImage || "/placeholder.svg"}
+                            alt="Preview"
+                            fill
+                            className="object-contain rounded-md"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center py-4">
+                          <ImageIcon className="h-10 w-10 text-muted-foreground mb-2" />
+                          <p className="text-sm text-muted-foreground mb-1">Click to upload an image</p>
+                          <p className="text-xs text-muted-foreground">SVG, PNG, JPG or GIF (max. 2MB)</p>
+                        </div>
+                      )}
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        className="hidden"
+                        accept="image/*"
+                        onChange={handleImageUpload}
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">Or enter an image URL:</span>
+                      <Input
+                        placeholder="https://example.com/image.jpg"
+                        {...field}
+                        onChange={(e) => {
+                          field.onChange(e)
+                          if (e.target.value) {
+                            setPreviewImage(e.target.value)
+                          } else {
+                            setPreviewImage(null)
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <FormDescription>Upload an image or provide a URL to an image of the tool.</FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <FormField
@@ -188,7 +362,7 @@ export default function EditTool({ params }: { params: { id: string } }) {
 
               <FormField
                 control={form.control}
-                name="category"
+                name="categoryId"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t("admin.category")}</FormLabel>
@@ -208,6 +382,44 @@ export default function EditTool({ params }: { params: { id: string } }) {
                     </Select>
                     <FormDescription>The category that best fits this tool.</FormDescription>
                     <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <FormField
+                control={form.control}
+                name="rating"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Rating</FormLabel>
+                    <FormControl>
+                      <Input type="number" min="0" max="5" step="0.1" {...field} />
+                    </FormControl>
+                    <FormDescription>Rating for the tool (0-5).</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="isFeatured"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                    <FormControl>
+                      <input
+                        type="checkbox"
+                        checked={field.value}
+                        onChange={field.onChange}
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel>Featured Tool</FormLabel>
+                      <FormDescription>Featured tools will be displayed prominently on the homepage.</FormDescription>
+                    </div>
                   </FormItem>
                 )}
               />

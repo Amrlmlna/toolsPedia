@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
@@ -13,10 +13,11 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "@/components/ui/use-toast"
-import { getCategories } from "@/lib/data"
 import { useLanguage } from "@/contexts/language-context"
 import { ImageIcon } from "lucide-react"
 import Image from "next/image"
+import { getCategories, createTool } from "@/lib/api"
+import { uploadImageClient } from "@/lib/supabase/storage"
 
 const formSchema = z.object({
   name: z.string().min(2, {
@@ -33,26 +34,48 @@ const formSchema = z.object({
     .url({
       message: "Please enter a valid referral URL.",
     })
-    .optional(),
+    .optional()
+    .or(z.literal("")),
   imageUrl: z.string().optional(),
   price: z.string().min(1, {
     message: "Price is required.",
   }),
-  category: z.string({
+  categoryId: z.string({
     required_error: "Please select a category.",
   }),
   tags: z.string().min(1, {
     message: "Please enter at least one tag.",
   }),
+  rating: z.coerce.number().min(0).max(5).default(0),
+  isFeatured: z.boolean().default(false),
 })
 
 export default function NewTool() {
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
+  const [categories, setCategories] = useState<any[]>([])
+  const [imageFile, setImageFile] = useState<File | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const categories = getCategories()
   const { t } = useLanguage()
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const data = await getCategories()
+        setCategories(data)
+      } catch (error) {
+        console.error("Error fetching categories:", error)
+        toast({
+          title: "Error",
+          description: "Failed to load categories. Please try again.",
+          variant: "destructive",
+        })
+      }
+    }
+
+    fetchCategories()
+  }, [])
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -63,43 +86,87 @@ export default function NewTool() {
       referralUrl: "",
       imageUrl: "",
       price: "",
-      category: "",
+      categoryId: "",
       tags: "",
+      rating: 0,
+      isFeatured: false,
     },
   })
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
+
+    // Validasi ukuran file (max 2MB)
+    if (file && file.size > 2 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Image size should be less than 2MB",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Validasi format file
+    const validTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+    if (file && !validTypes.includes(file.type)) {
+      toast({
+        title: "Invalid file type",
+        description: "Please upload JPEG, PNG, GIF, or WEBP images only",
+        variant: "destructive",
+      })
+      return
+    }
+
     if (file) {
-      // In a real app, you would upload this file to a storage service
-      // and get back a URL to use
+      setImageFile(file)
       const reader = new FileReader()
       reader.onload = (event) => {
         if (event.target?.result) {
           setPreviewImage(event.target.result as string)
-          // In a real app, you would set the form value to the URL from your storage service
-          form.setValue("imageUrl", "https://example.com/uploaded-image.jpg")
         }
       }
       reader.readAsDataURL(file)
     }
   }
 
-  function onSubmit(values: z.infer<typeof formSchema>) {
+  async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsSubmitting(true)
 
-    // In a real app, you would send this data to your backend
-    console.log(values)
+    try {
+      let imageUrl = values.imageUrl
 
-    setTimeout(() => {
-      setIsSubmitting(false)
+      // Upload image if file is selected
+      if (imageFile) {
+        const fileName = `${Date.now()}-${imageFile.name.replace(/\s+/g, "-").toLowerCase()}`
+        imageUrl = await uploadImageClient(imageFile, fileName)
+      }
+
+      // Prepare tags array from comma-separated string
+      const tags = values.tags.split(",").map((tag) => tag.trim())
+
+      // Create tool
+      await createTool({
+        ...values,
+        imageUrl,
+        tags,
+      })
+
       toast({
         title: "Tool added successfully!",
         description: "The tool has been added to your directory.",
       })
 
       router.push("/admin/tools")
-    }, 1000)
+    } catch (error) {
+      console.error("Error creating tool:", error)
+      toast({
+        title: "Error",
+        description: "Failed to create tool. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -249,7 +316,7 @@ export default function NewTool() {
 
               <FormField
                 control={form.control}
-                name="category"
+                name="categoryId"
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>{t("admin.category")}</FormLabel>
@@ -269,6 +336,44 @@ export default function NewTool() {
                     </Select>
                     <FormDescription>The category that best fits this tool.</FormDescription>
                     <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <FormField
+                control={form.control}
+                name="rating"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Rating</FormLabel>
+                    <FormControl>
+                      <Input type="number" min="0" max="5" step="0.1" {...field} />
+                    </FormControl>
+                    <FormDescription>Initial rating for the tool (0-5).</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="isFeatured"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                    <FormControl>
+                      <input
+                        type="checkbox"
+                        checked={field.value}
+                        onChange={field.onChange}
+                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel>Featured Tool</FormLabel>
+                      <FormDescription>Featured tools will be displayed prominently on the homepage.</FormDescription>
+                    </div>
                   </FormItem>
                 )}
               />
