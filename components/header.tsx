@@ -112,13 +112,6 @@ export default function Header() {
             >
               {t("nav.about")}
             </Link>
-            <Link
-              href="/admin"
-              className="text-sm font-medium transition-colors hover:text-primary"
-              onClick={() => setIsMenuOpen(false)}
-            >
-              {t("nav.admin")}
-            </Link>
           </nav>
         </div>
       )}
