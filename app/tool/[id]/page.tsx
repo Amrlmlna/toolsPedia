@@ -1,3 +1,5 @@
+"use client"
+
 import { CardFooter } from "@/components/ui/card"
 import Link from "next/link"
 import Image from "next/image"
@@ -7,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { getToolById, getTools, trackToolClick } from "@/lib/api"
+import { getToolById, getTools } from "@/lib/api"
 
 interface ToolPageProps {
   params: {
@@ -105,18 +107,22 @@ export default async function ToolPage({ params }: ToolPageProps) {
               </div>
 
               <div className="flex gap-4">
-                <form
-                  action={async () => {
-                    "use server"
-                    await trackToolClick(id)
+                <Button
+                  asChild
+                  className="bg-blue-500 hover:bg-blue-600"
+                  onClick={async () => {
+                    try {
+                      // Gunakan fetch API untuk memanggil API route
+                      await fetch(`/api/tools/${id}/click`, { method: "POST" })
+                    } catch (error) {
+                      console.error("Error tracking click:", error)
+                    }
                   }}
                 >
-                  <Button asChild className="bg-blue-500 hover:bg-blue-600">
-                    <a href={tool.referral_url || tool.url} target="_blank" rel="noopener noreferrer">
-                      Visit Official Website <ExternalLink className="ml-2 h-4 w-4" />
-                    </a>
-                  </Button>
-                </form>
+                  <a href={tool.referral_url || tool.url} target="_blank" rel="noopener noreferrer">
+                    Visit Official Website <ExternalLink className="ml-2 h-4 w-4" />
+                  </a>
+                </Button>
               </div>
             </div>
 
